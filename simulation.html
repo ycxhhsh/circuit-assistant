@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 允许缩放 (user-scalable=yes)，但设置初始比例 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes">
+    <title>CD4026 计数器仿真 </title>
+    <style>
+        /* === 全局重置 === */
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; outline: none; }
+        
+        body { 
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif; 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            background-color: #dcdcdc; 
+            overflow: hidden; /* 防止整个页面乱跑，内容在内部滚动 */
+        }
+
+        /* === 顶部导航栏 === */
+        .main-header { 
+            background: #2c3e50; color: #ecf0f1; 
+            height: 64px; flex-shrink: 0; 
+            display: flex; align-items: center; justify-content: space-between; 
+            padding: 0 15px; border-bottom: 4px solid #f39c12; 
+            z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.3); 
+        }
+        .header-title h1 { font-size: 20px; margin: 0; letter-spacing: 1px; white-space: nowrap; }
+
+        .header-controls { display: flex; align-items: center; gap: 8px; }
+        
+        .btn { 
+            border: none; padding: 0 12px; height: 36px; border-radius: 6px; 
+            cursor: pointer; font-weight: bold; font-size: 14px; 
+            display: flex; align-items: center; justify-content: center;
+            transition: transform 0.1s;
+        }
+        .btn:active { transform: scale(0.95); }
+        
+        .btn-demo { background: #27ae60; color: white; display: none; } /* 隐藏彩蛋 */
+        .btn-demo.show { display: inline-flex; }
+        .btn-reset { background: #c0392b; color: white; }
+        .btn-undo { background: #e67e22; color: white; }
+        .btn-info { background: #3498db; color: white; }
+
+        #status-text { 
+            font-size: 14px; font-weight: bold; margin-right: 10px; 
+            background: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 4px;
+            display: none; /* 小屏默认隐藏状态文字，留给按钮空间 */
+        }
+        /* 平板横屏时显示状态文字 */
+        @media (min-width: 768px) {
+            #status-text { display: inline-block; }
+            .header-title h1 { font-size: 22px; }
+            .btn { padding: 0 16px; height: 40px; font-size: 15px; }
+        }
+
+        /* === 主工作台容器 === */
+        .container { 
+            flex: 1; 
+            position: relative; 
+            overflow: hidden; 
+            background-color: #95a5a6;
+        }
+
+        #workbench-container { 
+            width: 100%; height: 100%;
+            overflow: auto; /* 关键：允许内部滚动 */
+            -webkit-overflow-scrolling: touch; /* iOS 惯性滚动 */
+            display: flex; 
+            /* 让内容居中，如果内容比屏幕小；如果大则靠左对齐以便滚动 */
+            align-items: flex-start; 
+            justify-content: flex-start; 
+            padding: 20px;
+        }
+
+        #workbench-panel {
+            /* 保持较大尺寸，保证布线空间 */
+            width: 1300px; height: 900px; 
+            flex-shrink: 0; 
+            background-color: #fff; 
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            background-image: linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            border-radius: 4px;
+            
+            /* 关键修改：移除 touch-action: none 以允许原生滚动/缩放，
+               在 JS 中通过 preventDefault 动态控制 */
+            cursor: crosshair;
+            user-select: none;
+        }
+
+        /* === SVG 连线层 === */
+        svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+        
+        .wire-group { pointer-events: auto; cursor: pointer; }
+        /* 增加线宽，方便手指点击 */
+        .wire-bg { fill: none; stroke: transparent; stroke-width: 20px; stroke-linecap: round; stroke-linejoin: round; } 
+        .wire-fg { fill: none; stroke-width: 4px; stroke-linecap: round; stroke-linejoin: round; transition: stroke 0.2s; pointer-events: none; }
+        .wire-group:hover .wire-fg { stroke-width: 6px; filter: drop-shadow(0 0 4px rgba(0,0,0,0.5)); }
+
+        /* === 元件通用样式 === */
+        .component { 
+            position: absolute; background: #ecf0f1; 
+            border: 2px solid #2c3e50; 
+            box-shadow: 4px 4px 10px rgba(0,0,0,0.2); 
+            font-size: 14px; font-weight: bold; color: #2c3e50; 
+            z-index: 10; border-radius: 4px; 
+        }
+
+        /* === 引脚样式 (加大触控热区) === */
+        .pin { 
+            width: 22px; height: 22px; 
+            background: #f1c40f; border: 2px solid #d35400; border-radius: 50%; 
+            position: absolute; z-index: 30; 
+            transform: translate(-50%, -50%); 
+            transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.1s; 
+        }
+        /* 超大隐形点击区域 */
+        .pin::after { content: ''; position: absolute; top: -15px; left: -15px; right: -15px; bottom: -15px; border-radius: 50%; z-index: 29; }
+        
+        .pin.magnified { 
+            transform: translate(-50%, -50%) scale(1.8); 
+            background-color: #fff; border-color: #2ecc71; 
+            z-index: 200; box-shadow: 0 0 10px rgba(46, 204, 113, 0.8); 
+        }
+        .pin:active, .pin.active { transform: translate(-50%, -50%) scale(1.5); background: #bdc3c7; }
+
+        .pin-label { position: absolute; font-size: 12px; color: #7f8c8d; font-family: Consolas, monospace; pointer-events: none; white-space: nowrap; font-weight: bold; }
+        .pl-left { right: 20px; top: -8px; }
+        .pl-right { left: 20px; top: -8px; }
+        .pl-top { top: -24px; left: 50%; transform: translateX(-50%); }
+
+        /* === 具体元件 === */
+        .power-rail { height: 30px; display: flex; align-items: center; border-radius: 15px; font-size: 14px; }
+        .vcc-rail { border: 2px dashed #e74c3c; background: rgba(231,76,60,0.1); color: #c0392b; }
+        .gnd-rail { border: 2px dashed #2c3e50; background: rgba(44,62,80,0.1); color: #2c3e50; }
+
+        .chip-dip16 { width: 140px; height: 360px; background: #34495e; color: #ecf0f1; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+        .chip-text { transform: rotate(-90deg); font-family: 'Courier New', monospace; font-size: 28px; letter-spacing: 3px; font-weight: bold; }
+        .notch { width: 30px; height: 15px; background: #7f8c8d; position: absolute; top: 0; left: 50%; transform: translateX(-50%); border-radius: 0 0 15px 15px; }
+
+        .module-box { background: white; text-align: center; padding: 8px; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .module-title { font-size: 14px; margin-bottom: 5px; color: #2980b9; }
+
+        .resistor-single { width: 80px; height: 20px; background: #ddd; border: 1px solid #999; display: flex; align-items: center; justify-content: center; }
+        .resistor-body { width: 40px; height: 10px; background: #f1c40f; border: 2px solid #b7950b; border-radius: 3px; }
+
+        .display-7seg { width: 140px; height: 320px; background: #bdc3c7; padding: 15px; border: 3px solid #7f8c8d; }
+        .screen-led { position: relative; width: 100%; height: 180px; background: #2c3e50; border-radius: 4px; box-shadow: inset 0 0 10px #000; margin-bottom: 20px; }
+        
+        .seg { position: absolute; background: #4a4a4a; border-radius: 3px; transition: 0.1s; opacity: 0.3; }
+        .seg.on { background: #e74c3c; box-shadow: 0 0 15px #e74c3c; opacity: 1; z-index: 5; }
+        .seg-a { top: 15px; left: 25px; width: 60px; height: 8px; }
+        .seg-b { top: 20px; right: 15px; width: 8px; height: 60px; }
+        .seg-c { bottom: 20px; right: 15px; width: 8px; height: 60px; }
+        .seg-d { bottom: 15px; left: 25px; width: 60px; height: 8px; }
+        .seg-e { bottom: 20px; left: 15px; width: 8px; height: 60px; }
+        .seg-f { top: 20px; left: 15px; width: 8px; height: 60px; }
+        .seg-g { top: 86px; left: 25px; width: 60px; height: 8px; }
+
+        /* === 模态框 (说明书) === */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 1000;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s;
+            backdrop-filter: blur(4px);
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+
+        .modal-content {
+            background: white; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+            padding: 25px; border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            transform: translateY(20px); transition: transform 0.3s;
+        }
+        .modal-overlay.active .modal-content { transform: translateY(0); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .close-btn { background: none; border: none; font-size: 28px; color: #999; cursor: pointer; padding: 0 10px; line-height: 1; }
+        .info-list p { margin-bottom: 12px; line-height: 1.5; color: #444; font-size: 16px; }
+        .info-list strong { color: #c0392b; }
+        .info-img { width: 100%; margin-top: 10px; border: 1px solid #eee; border-radius: 6px; }
+    </style>
+</head>
+<body>
+    <header class="main-header">
+        <div class="header-title">
+            <h1>🔌 CD4026 仿真</h1>
+        </div>
+        <div class="header-controls">
+            <span id="status-text">请连接电路</span>
+            <button class="btn btn-info" onclick="toggleHelp()">📖 说明</button>
+            <button class="btn btn-undo" onclick="undoLastLine()">撤销</button>
+            <button class="btn btn-reset" onclick="resetBoard()">清空</button>
+            <button class="btn btn-demo" onclick="loadDemoWiring()">演示</button>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- 这里的容器允许滚动 -->
+        <section id="workbench-container">
+            <div id="workbench-panel">
+                <svg id="wires-layer"></svg>
+                <div id="components-layer"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 说明弹窗 -->
+    <div id="help-modal" class="modal-overlay" onclick="handleModalClick(event)">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📋 接线规则</h2>
+                <button class="close-btn" onclick="toggleHelp()">×</button>
+            </div>
+            <div class="info-list">
+                <p><strong>1. 芯片电源：</strong><br>Pin 16 接 VCC，Pin 8 接 GND。</p>
+                <p><strong>2. 逻辑控制（必须接好）：</strong><br>
+                   - <strong>INH (2)</strong> & <strong>RST (15)</strong> ➞ 接 GND<br>
+                   - <strong>DEI (3)</strong> & <strong>DEO (4)</strong> ➞ 接 VCC
+                </p>
+                <p><strong>3. 信号与显示：</strong><br>
+                   - CLK (1) 接脉冲源。<br>
+                   - 数码管是共阴极，Pin 3/8 需接地。
+                </p>
+                <img src="https://youke1.picui.cn/s1/2025/12/01/692d947fdeab7.png" alt="原理图" class="info-img">
+            </div>
+        </div>
+    </div>
+
+<script>
+// === app.js 逻辑部分 ===
+
+const svgLayer = document.getElementById('wires-layer');
+const componentLayer = document.getElementById('components-layer');
+const workbench = document.getElementById('workbench-panel');
+const helpModal = document.getElementById('help-modal');
+
+// === 配置常量 ===
+const GRID = 20; 
+const JUMP_RADIUS = 6; 
+
+let connections = []; 
+let tempPath = null;
+let startPin = null;
+let currentPoints = [];
+let simulationInterval = null;
+let currentCount = 0; 
+
+// === 物理网络表 (白名单) ===
+const NETLIST = [
+    ['u1-16', 'VCC_NET'], ['u1-8', 'GND_NET'],
+    ['u1-2', 'GND_NET'],  ['u1-15', 'GND_NET'], 
+    ['u1-3', 'VCC_NET'],  ['u1-4', 'VCC_NET'],
+    ['u1-1', 'sw-clk'], 
+    ['smg-3', 'GND_NET'], ['smg-8', 'GND_NET'], ['smg-5', 'GND_NET'], 
+    ['u1-10', 'r-a-in'], ['r-a-out', 'smg-a'],
+    ['u1-12', 'r-b-in'], ['r-b-out', 'smg-b'],
+    ['u1-13', 'r-c-in'], ['r-c-out', 'smg-c'],
+    ['u1-9', 'r-d-in'],  ['r-d-out', 'smg-d'],
+    ['u1-11', 'r-e-in'], ['r-e-out', 'smg-e'],
+    ['u1-6', 'r-f-in'],  ['r-f-out', 'smg-f'],
+    ['u1-7', 'r-g-in'],  ['r-g-out', 'smg-g']
+];
+
+// 布局坐标
+const LAYOUT = {
+    vcc: { x: 4, y: 2, w: 55 },
+    gnd: { x: 4, y: 42, w: 55 }, 
+    chip: { x: 22, y: 10 },
+    resistors: { x: 42, y: 10 },
+    display: { x: 54, y: 10 },
+    clk: { x: 6, y: 15 } 
+};
+
+// ==========================================
+// 1. 初始化
+// ==========================================
+function init() {
+    renderComponents();
+    bindEvents();
+    bindHeaderEvents();
+    checkCircuit();
+    document.addEventListener('contextmenu', event => event.preventDefault());
+}
+
+window.toggleHelp = () => helpModal.classList.toggle('active');
+window.handleModalClick = (e) => { if(e.target === helpModal) toggleHelp(); };
+
+function renderComponents() {
+    componentLayer.innerHTML = '';
+    createPowerRail('vcc-rail', 'VCC +5V', LAYOUT.vcc.x, LAYOUT.vcc.y, LAYOUT.vcc.w, 'VCC_NET');
+    createPowerRail('gnd-rail', 'GND 0V', LAYOUT.gnd.x, LAYOUT.gnd.y, LAYOUT.gnd.w, 'GND_NET');
+
+    const cx = LAYOUT.chip.x * GRID, cy = LAYOUT.chip.y * GRID; 
+    const chip = createDiv('component chip-dip16', cx, cy, 140, 360);
+    chip.innerHTML = `<div class="notch"></div><span class="chip-text">CD4026</span>`;
+    componentLayer.appendChild(chip);
+    for(let i=0; i<8; i++) createPinAbsolute(cx, cy+40+i*40, `u1-${i+1}`, 'left', `${i+1}`);
+    for(let i=0; i<8; i++) createPinAbsolute(cx+140, cy+40+i*40, `u1-${16-i}`, 'right', `${16-i}`);
+
+    const rx = LAYOUT.resistors.x * GRID, ry = LAYOUT.resistors.y * GRID; 
+    const segs = ['a','b','c','d','e','f','g'];
+    segs.forEach((seg, i) => {
+        const y = ry + i * 40 + 10; 
+        const r = createDiv('component resistor-single', rx, y, 80, 20);
+        r.innerHTML = `<div class="resistor-body"></div>`;
+        componentLayer.appendChild(r);
+        createPinAbsolute(rx, y + 10, `r-${seg}-in`, 'left', `${seg}`);
+        createPinAbsolute(rx + 80, y + 10, `r-${seg}-out`, 'right', '');
+    });
+
+    const dx = LAYOUT.display.x * GRID, dy = LAYOUT.display.y * GRID; 
+    const disp = createDiv('component display-7seg', dx, dy, 140, 320);
+    disp.innerHTML = `<div class="screen-led">${segs.map(s=>`<div class="seg seg-${s}"></div>`).join('')}</div>
+                      <div style="text-align:center;color:#eee;font-size:10px;">SMG15611A</div>`;
+    componentLayer.appendChild(disp);
+    segs.forEach((seg, i) => createPinAbsolute(dx, ry + i * 40 + 20, `smg-${seg}`, 'left', seg));
+    
+    const bottomY = dy + 280; 
+    createPinAbsolute(dx + 30, bottomY, 'smg-3', 'top', '3');
+    createPinAbsolute(dx + 70, bottomY, 'smg-5', 'top', 'DP');
+    createPinAbsolute(dx + 110, bottomY, 'smg-8', 'top', '8');
+
+    const clkX = LAYOUT.clk.x * GRID, clkY = LAYOUT.clk.y * GRID;
+    const clk = createDiv('component module-box', clkX, clkY, 100, 80);
+    clk.innerHTML = `<div class="module-title">信号源</div><strong>CLK</strong>`;
+    componentLayer.appendChild(clk);
+    createPinAbsolute(clkX + 100, clkY + 40, 'sw-clk', 'right', 'OUT');
+}
+
+function createDiv(cls, x, y, w, h) {
+    const d = document.createElement('div'); d.className = cls;
+    d.style.left = x + 'px'; d.style.top = y + 'px';
+    if(w) d.style.width = w + 'px'; if(h) d.style.height = h + 'px';
+    return d;
+}
+function createPinAbsolute(x, y, id, labelPos, text) {
+    const p = document.createElement('div'); 
+    p.className = 'pin';
+    p.style.left = snap(x) + 'px'; 
+    p.style.top = snap(y) + 'px';
+    p.dataset.id = id;
+
+    // 【新增】核心修改：根据标签位置，标记引脚应该“水平走”还是“垂直走”
+    // 如果标签在 top/bottom，说明是垂直引脚；否则(left/right)就是水平引脚
+    p.dataset.dir = (labelPos === 'top' || labelPos === 'bottom') ? 'ver' : 'hor';
+
+    if(text) {
+        const l = document.createElement('span'); 
+        l.className = `pin-label pl-${labelPos}`; 
+        l.innerText = text;
+        p.appendChild(l);
+    }
+    componentLayer.appendChild(p);
+}
+function createPowerRail(cls, text, gx, gy, gw, netId) {
+    const x = gx*GRID, y = gy*GRID, w = gw*GRID;
+    const r = createDiv(`power-rail ${cls}`, x, y, w, 30);
+    r.innerText = text; r.style.paddingLeft='20px'; componentLayer.appendChild(r);
+    [0.1, 0.3, 0.5, 0.7, 0.9].forEach(p => createPinAbsolute(x + w*p, y + 15, netId, 'top', ''));
+}
+
+// ==========================================
+// 2. 交互逻辑 (优化触控)
+// ==========================================
+function bindEvents() {
+    let currentCandidatePin = null;
+    const handleStart = (e) => {
+        const t = e.target;
+        // 只有点到 pin 时才禁止默认行为（如缩放）
+        if(t.classList.contains('pin')) {
+            e.preventDefault(); 
+            startPin = t; startPin.classList.add('active');
+            currentPoints = [getPinPos(startPin)];
+            createTempPath();
+        }
+    };
+    
+    const handleMove = (e) => {
+        // 如果没有开始连线，直接返回，允许系统原生的滚动和缩放
+        if(!startPin) return;
+        
+        // 如果正在连线，禁止默认行为（防止拖动连线时页面跟着动）
+        e.preventDefault(); 
+        e.stopImmediatePropagation();
+
+        let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        // 触控时手指向上偏移一点，避免挡住视线
+        if(e.touches) clientY -= 20; 
+        
+        const r = workbench.getBoundingClientRect();
+        
+        // 实时高亮最近引脚
+        const nearest = getNearestPin(clientX, clientY);
+        document.querySelectorAll('.pin.magnified').forEach(p => p.classList.remove('magnified'));
+
+        let targetX, targetY;
+        if (nearest) {
+            currentCandidatePin = nearest;
+            nearest.classList.add('magnified');
+            targetX = parseInt(nearest.style.left);
+            targetY = parseInt(nearest.style.top);
+        } else {
+            currentCandidatePin = null;
+            targetX = snap(clientX - r.left);
+            targetY = snap(clientY - r.top);
+        }
+        // 优化：第一段线强制走直线（正交锁定）
+        if (currentPoints.length === 1 && startPin) {
+            const startPt = currentPoints[0];
+            const dir = startPin.dataset.dir; // 获取刚才存的方向
+
+            if (dir === 'hor') {
+                // 如果是芯片引脚，强制 Y 轴不变，只允许水平拖动
+                targetY = startPt.y; 
+            } else if (dir === 'ver') {
+                // 如果是电源引脚，强制 X 轴不变，只允许垂直拖动
+                targetX = startPt.x;
+            }
+        }
+
+        const last = currentPoints[currentPoints.length-1];
+        if(Math.abs(targetX - last.x) >= GRID || Math.abs(targetY - last.y) >= GRID || nearest) {
+            if(targetX !== last.x || targetY !== last.y) {
+                // 简单的直角走线逻辑
+                if(targetX !== last.x && targetY !== last.y) {
+                    currentPoints.push({x: targetX, y: last.y});
+                }
+                currentPoints.push({x: targetX, y: targetY});
+                updateTempPath();
+            }
+        }
+    };
+
+    const handleEnd = (e) => {
+        document.querySelectorAll('.pin.magnified').forEach(p => p.classList.remove('magnified'));
+        if(!startPin) return;
+        
+        const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+        const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+
+        let target = currentCandidatePin;
+        if(target && target !== startPin) {
+            const endPt = getPinPos(target); 
+            const last = currentPoints[currentPoints.length-1];
+            if(last.x !== endPt.x && last.y !== endPt.y) currentPoints.push({x: endPt.x, y: last.y});
+            currentPoints.push(endPt); 
+            addConnection(startPin, target, currentPoints);
+        }
+        
+        if(tempPath) tempPath.remove(); 
+        startPin.classList.remove('active'); 
+        startPin=null; currentCandidatePin = null;currentPoints=[]; tempPath=null;
+    };
+
+    // 使用 passive: false 允许 preventDefault
+    workbench.addEventListener('mousedown', handleStart); 
+    workbench.addEventListener('touchstart', handleStart, {passive:false});
+    
+    // 绑定到 document 以防止滑出区域丢失
+    document.addEventListener('mousemove', handleMove); 
+    document.addEventListener('touchmove', handleMove, {passive:false});
+    
+    document.addEventListener('mouseup', handleEnd); 
+    document.addEventListener('touchend', handleEnd);
+}
+
+const SNAP_RADIUS = 15; // 吸附半径
+function getNearestPin(clientX, clientY) {
+    const pins = document.querySelectorAll('.pin');
+    let minGroup = null;
+    let minDist = Infinity;
+    pins.forEach(pin => {
+        if (pin === startPin) return;
+        const rect = pin.getBoundingClientRect();
+        // 比较距离
+        const dist = Math.hypot((rect.left + rect.width / 2) - clientX, (rect.top + rect.height / 2) - clientY);
+        if (dist < SNAP_RADIUS && dist < minDist) { minDist = dist; minGroup = pin; }
+    });
+    return minGroup;
+}
+
+function bindHeaderEvents() {
+    const header = document.querySelector('.main-header');
+    const demoBtn = document.querySelector('.btn-demo');
+    header.addEventListener('dblclick', (e) => {
+        if(e.target === header) demoBtn.classList.toggle('show');
+    });
+}
+function getGridPos(e) { 
+    const r = workbench.getBoundingClientRect(); 
+    const cx = e.touches?e.touches[0].clientX:e.clientX; 
+    const cy = e.touches?e.touches[0].clientY:e.clientY; 
+    return {x:snap(cx-r.left), y:snap(cy-r.top)}; 
+}
+function getPinPos(el) { return {x:parseInt(el.style.left), y:parseInt(el.style.top)}; }
+function snap(v) { return Math.round(v/GRID)*GRID; }
+function createTempPath() { tempPath = document.createElementNS('http://www.w3.org/2000/svg', 'path'); tempPath.setAttribute('stroke','#3498db'); tempPath.setAttribute('stroke-width','4'); tempPath.setAttribute('fill','none'); tempPath.setAttribute('stroke-dasharray','5,5'); svgLayer.appendChild(tempPath); }
+function updateTempPath() { if(!tempPath) return; let d=`M ${currentPoints[0].x} ${currentPoints[0].y}`; for(let i=1; i<currentPoints.length; i++) d+=` L ${currentPoints[i].x} ${currentPoints[i].y}`; tempPath.setAttribute('d', d); }
+
+// ==========================================
+// 3. 核心仿真逻辑
+// ==========================================
+function getTargetNet(pinId) {
+    for (let pair of NETLIST) {
+        if (pair[0] === pinId && pair[1].endsWith('_NET')) return pair[1];
+        if (pair[1] === pinId && pair[0].endsWith('_NET')) return pair[0];
+    }
+    return null;
+}
+function addConnection(pinA, pinB, rawPoints) {
+    const idA = pinA.dataset.id;
+    const idB = pinB.dataset.id;
+    let isValid = false;
+    NETLIST.forEach(pair => {
+        if((pair[0]===idA && pair[1]===idB) || (pair[0]===idB && pair[1]===idA)) isValid = true;
+        if((pair[1].endsWith('_NET') && (pair[0]===idA || pair[0]===idB) && (pinA.dataset.id === pair[1] || pinB.dataset.id === pair[1]))) isValid = true;
+    });
+    if (!isValid) {
+        const netA = getTargetNet(idA);
+        const netB = getTargetNet(idB);
+        if (netA && netB && netA === netB) isValid = true;
+    }
+    
+    const color = isValid ? '#2ecc71' : '#e74c3c'; 
+    const points = simplifyPoints(rawPoints);
+    const pathData = renderWireWithJumps(points);
+
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g'); group.setAttribute('class', 'wire-group');
+    // wire-bg 负责接收点击事件，wire-fg 负责显示
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'path'); bg.setAttribute('d', pathData); bg.setAttribute('class', 'wire-bg');
+    const fg = document.createElementNS('http://www.w3.org/2000/svg', 'path'); fg.setAttribute('d', pathData); fg.setAttribute('class', 'wire-fg'); fg.setAttribute('stroke', color);
+    group.appendChild(bg); group.appendChild(fg); svgLayer.appendChild(group);
+    
+    const conn = {id:Date.now(), el:group, valid:isValid, points:points, pins:[idA, idB]}; 
+    connections.push(conn);
+    
+    group.addEventListener('click', ()=>{ 
+        if(confirm('删除此连线？')){ 
+            group.remove(); 
+            connections=connections.filter(c=>c.id!==conn.id); 
+            checkCircuit(); 
+        }
+    });
+    checkCircuit();
+}
+
+function traceLogicLevel(pinId, visited = new Set()) {
+    if(visited.has(pinId)) return 'FLOAT';
+    visited.add(pinId);
+    if(pinId === 'VCC_NET' || (pinId.endsWith('_NET') && pinId.includes('VCC'))) return 'HIGH';
+    if(pinId === 'GND_NET' || (pinId.endsWith('_NET') && pinId.includes('GND'))) return 'LOW';
+    for (const conn of connections) {
+        if (conn.pins.includes(pinId)) {
+            const other = conn.pins[0] === pinId ? conn.pins[1] : conn.pins[0];
+            const lvl = traceLogicLevel(other, visited);
+            if (lvl !== 'FLOAT') return lvl;
+        }
+    }
+    return 'FLOAT';
+}
+
+function isPathConnected(pinA, pinB) { return connections.some(c => c.valid && c.pins.includes(pinA) && c.pins.includes(pinB)); }
+function isSegmentValid(chipPin, resIn, resOut, dispPin) { return isPathConnected(chipPin, resIn) && isPathConnected(resOut, dispPin); }
+
+function checkCircuit() {
+    clearInterval(simulationInterval); update7Seg(-1);
+    const status = document.getElementById('status-text');
+
+    const hasPower = (traceLogicLevel('u1-16')==='HIGH' && traceLogicLevel('u1-8')==='LOW');
+    const dispGnd = (traceLogicLevel('smg-3')==='LOW' && traceLogicLevel('smg-8')==='LOW');
+    const hasClk = isPathConnected('u1-1', 'sw-clk');
+
+    const inhLevel = traceLogicLevel('u1-2');  
+    const rstLevel = traceLogicLevel('u1-15'); 
+    const deiLevel = traceLogicLevel('u1-3');  
+    const deoLevel = traceLogicLevel('u1-4');  
+
+    if(hasPower && dispGnd && hasClk) {
+        if(inhLevel !== 'LOW') {
+            status.innerText = "⚠️ INH (Pin 2) 未接地"; status.style.color = "#f39c12";
+            update7Seg(currentCount); 
+        } else if(rstLevel !== 'LOW') {
+            status.innerText = "⚠️ RST (Pin 15) 未接地"; status.style.color = "#f39c12";
+            currentCount = 0; update7Seg(0);
+        } else if(deiLevel !== 'HIGH') {
+            status.innerText = "⚠️ DEI (Pin 3) 未接 VCC"; status.style.color = "#f39c12";
+            update7Seg(-1); 
+        } else if(deoLevel !== 'HIGH') {
+            status.innerText = "⚠️ DEO (Pin 4) 未接 VCC"; status.style.color = "#f39c12";
+            update7Seg(currentCount);
+        } else {
+            status.innerText = "✅ 电路工作正常"; status.style.color = "#2ecc71";
+            simulationInterval = setInterval(() => { 
+                currentCount = (currentCount + 1) % 10; 
+                update7Seg(currentCount); 
+            }, 800);
+        }
+    } else {
+        if(!hasPower) { status.innerText = "❌ 芯片未通电 (16, 8)"; status.style.color = "#e74c3c"; }
+        else if(!dispGnd) { status.innerText = "❌ 数码管未接地"; status.style.color = "#e74c3c"; }
+        else if(!hasClk) { status.innerText = "⚠️ 未连接时钟 CLK"; status.style.color = "#f39c12"; }
+        else status.innerText = "请连接电路";
+    }
+}
+
+const SEG_LOGIC_MAP = [[1,1,1,1,1,1,0], [0,1,1,0,0,0,0], [1,1,0,1,1,0,1], [1,1,1,1,0,0,1], [0,1,1,0,0,1,1], [1,0,1,1,0,1,1], [1,0,1,1,1,1,1], [1,1,1,0,0,0,0], [1,1,1,1,1,1,1], [1,1,1,1,0,1,1]];
+const PATH_MAP = {'a':['u1-10','r-a-in','r-a-out','smg-a'],'b':['u1-12','r-b-in','r-b-out','smg-b'],'c':['u1-13','r-c-in','r-c-out','smg-c'],'d':['u1-9','r-d-in','r-d-out','smg-d'],'e':['u1-11','r-e-in','r-e-out','smg-e'],'f':['u1-6','r-f-in','r-f-out','smg-f'],'g':['u1-7','r-g-in','r-g-out','smg-g']};
+
+function update7Seg(n) {
+    const chars = ['a','b','c','d','e','f','g'];
+    if(n===-1) { chars.forEach(c => document.querySelector(`.seg-${c}`).classList.remove('on')); return; }
+    const logicState = SEG_LOGIC_MAP[n];
+    chars.forEach((seg, i) => {
+        const el = document.querySelector(`.seg-${seg}`);
+        const p = PATH_MAP[seg];
+        if(logicState[i] && isSegmentValid(p[0], p[1], p[2], p[3])) el.classList.add('on');
+        else el.classList.remove('on');
+    });
+}
+
+function renderWireWithJumps(points) {
+    let d = `M ${points[0].x} ${points[0].y}`;
+    let segments = [];
+    for(let i=0; i<points.length-1; i++) segments.push({x1:points[i].x, y1:points[i].y, x2:points[i+1].x, y2:points[i+1].y, isVert:points[i].x===points[i+1].x});
+    segments.forEach((seg, segIndex) => {
+        let hits = [];
+        connections.forEach(conn => {
+            if(!conn.points) return;
+            for(let j=0; j<conn.points.length-1; j++) {
+                const o = {x1:conn.points[j].x, y1:conn.points[j].y, x2:conn.points[j+1].x, y2:conn.points[j+1].y, isVert:conn.points[j].x===conn.points[j+1].x};
+                if(seg.isVert !== o.isVert) {
+                    const v=seg.isVert?seg:o; const h=seg.isVert?o:seg;
+                    if(v.x1>Math.min(h.x1,h.x2) && v.x1<Math.max(h.x1,h.x2) && h.y1>Math.min(v.y1,v.y2) && h.y1<Math.max(v.y1,v.y2)) hits.push(seg.isVert?h.y1:v.x1);
+                }
+            }
+        });
+        hits.sort((a,b)=>(seg.isVert?(seg.y2>seg.y1?a-b:b-a):(seg.x2>seg.x1?a-b:b-a)));
+        let cur = seg.isVert?seg.y1:seg.x1; const end = seg.isVert?seg.y2:seg.x2;
+        hits.forEach(h => {
+            
+            const dist = Math.abs(h-cur);
+            if(dist>JUMP_RADIUS) { const t=h-(cur<end?JUMP_RADIUS:-JUMP_RADIUS); d+=seg.isVert?` L ${seg.x1} ${t}`:` L ${t} ${seg.y1}`; }
+            const next = h+(cur<end?JUMP_RADIUS:-JUMP_RADIUS);
+            d += seg.isVert ? ` A ${JUMP_RADIUS} ${JUMP_RADIUS} 0 0 1 ${seg.x1} ${next}` : ` A ${JUMP_RADIUS} ${JUMP_RADIUS} 0 0 1 ${next} ${seg.y1}`;
+            cur = next;
+        });
+        d += ` L ${seg.x2} ${seg.y2}`;
+    });
+    return d;
+}
+function simplifyPoints(pts) {
+    if(pts.length<3) return pts;
+    const res=[pts[0]];
+    for(let i=1; i<pts.length-1; i++) if(!((pts[i-1].x===pts[i].x && pts[i].x===pts[i+1].x) || (pts[i-1].y===pts[i].y && pts[i].y===pts[i+1].y))) res.push(pts[i]);
+    res.push(pts[pts.length-1]); return res;
+}
+
+window.loadDemoWiring = () => {
+    if(connections.length > 0 && !confirm("将清空当前布线，加载演示？")) return;
+    resetBoard();
+    
+    const cx = LAYOUT.chip.x * GRID; 
+    const cx_r = cx + 140;           
+    const CH_CLK = 280; 
+    const CH_OUT_1 = 620; 
+    const CH_OUT_2 = 640;
+    const CH_OUT_3 = 660;
+    const CH_OUT_4 = 680;
+    const CH_OUT_5 = 700;
+
+    const demos = [
+        ['u1-16', 'VCC_NET', [[cx_r+60, 240], [cx_r+60, 60]]], 
+        ['u1-8', 'GND_NET', [[cx-40, 520], [cx-40, 860]]], 
+        ['smg-3', 'GND_NET', [[1080+40, 600], [1080+40, 860]]],
+        ['smg-8', 'GND_NET', [[1080+120, 600], [1080+120, 860]]],
+        ['u1-1', 'sw-clk', [[CH_CLK, 240], [CH_CLK, 340]]], 
+        ['u1-2', 'GND_NET', [[cx-60, 280], [cx-60, 860]]], 
+        ['u1-3', 'VCC_NET', [[cx-80, 320], [cx-80, 60]]],  
+        ['u1-4', 'VCC_NET', [[cx-100, 360], [cx-100, 60]]], 
+        ['u1-15', 'GND_NET', [[cx_r+20, 280], [cx_r+20, 860]]], 
+        ['u1-10', 'r-a-in', [[CH_OUT_1, 480], [CH_OUT_1, 220]]], 
+        ['u1-12', 'r-b-in', [[CH_OUT_2, 400], [CH_OUT_2, 260]]],
+        ['u1-13', 'r-c-in', [[CH_OUT_3, 360], [CH_OUT_3, 300]]],
+        ['u1-9', 'r-d-in', [[CH_OUT_4, 520], [CH_OUT_4, 340]]],
+        ['u1-11', 'r-e-in', [[CH_OUT_5, 440], [CH_OUT_5, 380]]],
+        ['u1-6', 'r-f-in', [[cx-40, 440], [cx-40, 180], [740, 180], [740, 420]]],
+        ['u1-7', 'r-g-in', [[cx-60, 480], [cx-60, 160], [760, 160], [760, 460]]],
+        ['r-a-out', 'smg-a', []], ['r-b-out', 'smg-b', []],
+        ['r-c-out', 'smg-c', []], ['r-d-out', 'smg-d', []],
+        ['r-e-out', 'smg-e', []], ['r-f-out', 'smg-f', []],
+        ['r-g-out', 'smg-g', []]
+    ];
+
+    let i = 0;
+    const t = setInterval(() => {
+        if(i >= demos.length) { clearInterval(t); checkCircuit(); return; }
+        const d = demos[i];
+        const elA = findPin(d[0]); const elB = findPin(d[1]);
+        if(elA && elB) {
+            let pts = [getPinPos(elA)];
+            d[2].forEach(p => pts.push({x:p[0], y:p[1]}));
+            pts.push(getPinPos(elB));
+            addConnection(elA, elB, pts);
+        }
+        i++;
+    }, 100);
+};
+
+function findPin(id) { return document.querySelector(`.pin[data-id="${id}"]`); }
+window.undoLastLine = () => { if(connections.length){ const c=connections.pop(); c.el.remove(); checkCircuit(); }};
+window.resetBoard = () => { connections.forEach(c => c.el.remove()); connections=[]; checkCircuit(); currentCount=0; };
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
