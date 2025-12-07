@@ -2,3 +2,4 @@ streamlit
 ultralytics
 numpy
 opencv-python-headless
+openai
