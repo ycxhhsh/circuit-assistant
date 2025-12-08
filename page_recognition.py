@@ -288,6 +288,23 @@ def show():
     with col2:
         if not is_calibrated: st.warning("⚠️ 自动对齐置信度低，请检查左侧手动平移")
         all_errs = err_seg + err_sig + err_pwr + err_ctrl
+        
+        # 将判卷结果整理成一段话，存入 session_state
+        log_text = "【最新电路检测报告】\n"
+        if not is_calibrated:
+            log_text += "⚠️ (警告：画面未完全对齐，检测结果可能不准)\n"
+        
+        if all_errs:
+            log_text += "❌ 检测到的错误：\n" + "\n".join(all_errs) + "\n"
+        else:
+            log_text += "✅ 电路连接逻辑完全正确！\n"
+            
+        if praises:
+            log_text += "✅ 正确的连接：\n" + "\n".join(praises)
+            
+        # 存入全局变量，给 AI 读取
+        st.session_state["recognition_log"] = log_text
+
         if all_errs:
             for e in all_errs: st.error(e)
         else:
