@@ -2,7 +2,6 @@
 import streamlit as st
 from openai import OpenAI
 
-# 配置你的 API
 API_KEY = "sk-vVIGbUylII5Kg9rZwGLZMzzubt778St90r66gGtTXTUs4shK" 
 BASE_URL = "https://api.openai-proxy.org/v1"
 MODEL_NAME = "gpt-4o" 
@@ -26,33 +25,62 @@ def init_ai_session():
         ]
 
 def render_floating_assistant():
-    """渲染底部长条形悬浮对话框"""
+    """渲染平板优化的悬浮对话框"""
     init_ai_session()
     
-    # CSS 样式 (保持不变)
     st.markdown("""
     <style>
+    /* 1. 定位容器：为了平板好按，建议放在右下角或者右上角偏下的位置 */
+    /* 这里设定为：右上角，但往下挪一点，避开平板的状态栏和菜单 */
     [data-testid="stPopover"] {
-        position: fixed; bottom: 40px; right: 40px; z-index: 9999;
+        position: fixed;
+        top: 100px;       /* 距离顶部 100px */
+        right: 30px;      /* 距离右侧 30px */
+        z-index: 99999;
     }
+    
+    /* 2. 按钮样式：大号平板触控版 */
     [data-testid="stPopover"] > div > button {
-        width: 260px; height: 55px; border-radius: 30px; 
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-        color: white; border: none; box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-        font-size: 16px; font-weight: bold; transition: all 0.3s ease;
-        display: flex; align-items: center; justify-content: center;
+        width: 72px;        /* 增大宽度 */
+        height: 72px;       /* 增大高度 */
+        border-radius: 35px; /* 保持圆形 (高度的一半) */
+        background: #ffffff;
+        color: #333;
+        border: 1px solid #e0e0e0;
+        /* 更深的阴影，制造悬浮感 */
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12); 
+        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
     }
-    [data-testid="stPopover"] > div > button::after {
-        content: "🤖 有问题？问问 AI 助教"; margin-left: 8px;
+    
+    /* 3. 放大内部的 Emoji 图标 */
+    [data-testid="stPopover"] > div > button > div {
+        font-size: 36px !important; /* 图标放大 */
     }
-    [data-testid="stPopover"] > div > button:hover {
-        transform: translateY(-5px); box-shadow: 0 15px 25px rgba(0,0,0,0.3);
+    
+    /* 4. 按下效果 (Active) - 模拟真实按钮反馈 */
+    [data-testid="stPopover"] > div > button:active {
+        transform: scale(0.9);
+        background-color: #f5f5f5;
+    }
+    
+    /* 5. 展开后的对话框样式 */
+    [data-testid="stPopoverBody"] {
+        width: 380px !important; /* 对话框也可以宽一点 */
+        max-width: 90vw; /* 防止超出手机屏幕 */
+        border-radius: 20px !important;
+        border: none !important;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.15) !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    with st.popover("💬", use_container_width=False):
-        st.markdown("### 🤖 电路百事通")
+    # 按钮里只放一个图标
+    with st.popover("🤖", use_container_width=False):
+        st.markdown("### 💬 助教小电")
         
         msg_container = st.container(height=400)
         with msg_container:
