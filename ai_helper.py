@@ -25,79 +25,90 @@ def init_ai_session():
         ]
 
 def render_floating_assistant():
-    """渲染平板优化的悬浮对话框 (强制右上角版)"""
+    """渲染平板优化的悬浮对话框 (CSS 增强版)"""
     init_ai_session()
     
     st.markdown("""
     <style>
-    /* 定义呼吸动画：让按钮有“活着”的感觉 */
+    /* 呼吸动画 */
     @keyframes pulse-purple {
         0% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7); }
         70% { box-shadow: 0 0 0 20px rgba(102, 126, 234, 0); }
         100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0); }
     }
 
-    /* 1. 定位容器：使用 !important 强制固定在右上角 */
+    /* 1. 容器定位：强制右上角 */
+    /* 注意：这里改用了更宽松的选择器，只要含有 stPopover 就可以 */
     [data-testid="stPopover"] {
         position: fixed !important;
-        top: 80px !important;    /* 距离顶部 */
-        right: 40px !important;  /* 距离右侧 */
-        left: auto !important;   /* 强制取消左侧定位 */
-        z-index: 999999 !important;
-        transform: none !important; /* 防止父容器干扰 */
+        top: 30px !important;    /* 距离顶部调小一点，防遮挡 */
+        right: 30px !important;  /* 距离右侧 */
+        left: auto !important;   /* 必须强制取消左侧定位 */
+        bottom: auto !important;
+        z-index: 9999999 !important; /* 层级拉满 */
+        transform: none !important;
+        width: auto !important;
+        height: auto !important;
     }
     
-    /* 2. 按钮样式：强制变大 (80px) */
-    [data-testid="stPopover"] > div > button {
-        width: 80px !important;       /* 强制宽度 */
-        height: 80px !important;      /* 强制高度 */
-        border-radius: 50% !important; /* 强制圆形 */
-        
-        /* 渐变紫背景 */
+    /* 2. 按钮样式：大号紫色圆形 */
+    /* 🔥 关键修改：把 "> div > button" 改成了 "button"，匹配更强 */
+    [data-testid="stPopover"] button {
+        width: 80px !important;
+        height: 80px !important;
+        border-radius: 50% !important;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        border: 2px solid white !important;
+        border: 3px solid white !important; /* 加粗白边，更明显 */
+        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4) !important;
         
-        /* 呼吸动画 */
         animation: pulse-purple 2s infinite;
+        transition: transform 0.2s ease;
         
-        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
         padding: 0 !important;
         margin: 0 !important;
     }
     
-    /* 3. 图标样式：强制变大 */
-    [data-testid="stPopover"] > div > button > div,
-    [data-testid="stPopover"] > div > button > span {
-        font-size: 40px !important; /* 图标极大 */
+    /* 3. 图标样式 */
+    [data-testid="stPopover"] button div,
+    [data-testid="stPopover"] button span,
+    [data-testid="stPopover"] button p {
+        font-size: 40px !important;
         color: white !important;
         line-height: 1 !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
     
-    /* 4. 按下反馈 */
-    [data-testid="stPopover"] > div > button:active {
+    /* 4. 交互效果 */
+    [data-testid="stPopover"] button:active {
         transform: scale(0.9) !important;
         animation: none !important;
+        background: #5a67d8 !important;
     }
     
+    [data-testid="stPopover"] button:hover {
+        transform: scale(1.05) !important;
+    }
+
     /* 5. 展开后的对话框美化 */
     [data-testid="stPopoverBody"] {
         width: 400px !important;
         max-width: 90vw !important;
-        border-radius: 24px !important;
-        border: none !important;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.2) !important;
+        border-radius: 20px !important;
+        border: 1px solid #eee !important;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.15) !important;
+        top: 120px !important; /* 调整展开框的位置，不要盖住按钮 */
+        right: 30px !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # 按钮内容 (只放图标)
     with st.popover("🤖", use_container_width=False):
         st.markdown("### 💬 助教小电")
         
-        # 消息容器
         msg_container = st.container(height=400)
         with msg_container:
             for msg in st.session_state.messages:
@@ -105,17 +116,14 @@ def render_floating_assistant():
                     with st.chat_message(msg["role"]):
                         st.markdown(msg["content"])
 
-        # 输入框
         if prompt := st.chat_input("我的电路哪里有问题？"):
-            # 获取最新判卷日志
-            log_context = st.session_state.get("recognition_log", "（学生尚未上传图片或进行识别）")
+            log_context = st.session_state.get("recognition_log", "（学生尚未上传图片）")
             dynamic_system_prompt = f"""
             你是一位专业的电子电路助教。
             【当前检测状态】：{log_context}
             请优先解答接线错误。
             """
             
-            # 更新 system prompt
             if len(st.session_state.messages) > 0 and st.session_state.messages[0]["role"] == "system":
                 st.session_state.messages[0]["content"] = dynamic_system_prompt
 
