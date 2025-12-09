@@ -33,6 +33,7 @@ def init_ai_session():
         4. Pin 15 (RST) -> 接接地 (Pin 8) (复位端)
 
         请根据以上标准回答学生的提问。如果学生问“我该怎么接”，请引导他们完成这四个引脚的连接。
+        当然，如果学生问及其他电路知识，也请你以专业的水平回答。
         """
         st.session_state.messages = [
             {"role": "system", "content": system_instruction}
@@ -102,7 +103,7 @@ def render_floating_assistant():
                         st.markdown(msg["content"])
 
         # 提示语可以改得通用一点
-        if prompt := st.chat_input("关于电路有什么问题？"):
+        if prompt := st.chat_input("请问电路相关的问题"):
             
             # --- 变动处：移除了之前的 log_context 获取和 system prompt 动态更新逻辑 ---
             
