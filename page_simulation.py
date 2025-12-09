@@ -16,7 +16,7 @@ def show():
         </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("<h2 style='text-align: center; margin-bottom:0;'>🔌 交互式电路仿真 (平板模式)</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-bottom:0;'>🔌 交互式电路仿真</h2>", unsafe_allow_html=True)
 
     try:
         with open("simulation.html", "r", encoding='utf-8') as f:
