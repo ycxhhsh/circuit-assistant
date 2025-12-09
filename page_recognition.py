@@ -1,4 +1,6 @@
 # --- filename: page_recognition.py ---
+import os
+os.environ["YOLO_CONFIG_DIR"] = "/tmp"
 import streamlit as st
 import cv2
 import numpy as np
