@@ -20,93 +20,99 @@ def init_ai_session():
             st.session_state.ai_client = None
 
     if "messages" not in st.session_state:
-        # 设定一个静态的 System Prompt，包含电路知识，但不包含实时检测状态
         system_instruction = """
         你是一位专业的电子电路助教，正在指导学生连接 CD4026 计数器芯片。
-
-        【实验背景信息】
-        为了降低难度，数码管和电源线通常已预设接好。
-        学生主要负责以下 4 个核心引脚的连接，标准接法如下：
+        【核心引脚标准接法】：
         1. Pin 1 (CLK) -> 接时钟信号
-        2. Pin 2 (INH) -> 接开关或接地 (低电平有效)
-        3. Pin 3 (DEI) -> 接 VCC (Pin 16) (高电平有效)
-        4. Pin 15 (RST) -> 接接地 (Pin 8) (复位端)
-
-        请根据以上标准回答学生的提问。如果学生问“我该怎么接”，请引导他们完成这四个引脚的连接。
-        当然，如果学生问及其他电路知识，也请你以专业的水平回答。
+        2. Pin 2 (INH) -> 接开关或接地
+        3. Pin 3 (DEI) -> 接 VCC (Pin 16)
+        4. Pin 15 (RST) -> 接接地 (Pin 8)
+        请引导学生完成连接。
         """
         st.session_state.messages = [
             {"role": "system", "content": system_instruction}
         ]
 
 def render_floating_assistant():
-    """渲染平板优化的悬浮对话框"""
+    """渲染平板优化的悬浮对话框 - 修复版"""
     init_ai_session()
     
     st.markdown("""
     <style>
-    /* 1. 强制定位容器：右上角 */
+    /* --- 1. 按钮容器：强制固定在右上角 --- */
     [data-testid="stPopover"] {
-        position: fixed !important; /* 增加权重 */
-        top: 60px !important;       /* 距离顶部 60px (避开 Streamlit 自带的汉堡菜单) */
-        right: 20px !important;     /* 距离右侧 20px */
-        left: auto !important;      /* 强制取消左侧定位，防止出现在左边 */
-        z-index: 999999 !important; /* 确保层级最高，不被侧边栏遮挡 */
+        position: fixed !important;
+        top: 80px !important;       /* 距离顶部留出空间 */
+        right: 40px !important;     /* 距离右侧留出空间 */
+        left: auto !important;      /* 禁用左侧定位 */
+        bottom: auto !important;
+        z-index: 9999999 !important; /* 最高层级 */
+        width: auto !important;     /* 防止容器撑满屏幕 */
     }
-    
-    /* 2. 按钮样式：大号平板触控版 */
+
+    /* --- 2. 按钮本体样式 --- */
     [data-testid="stPopover"] > div > button {
-        width: 60px;          /* 稍微调小一点点以免挡住太多内容 */
-        height: 60px;
-        border-radius: 30px;
-        background: #ffffff;
-        color: #333;
-        border: 1px solid #e0e0e0;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
-        transition: transform 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
+        width: 64px !important;
+        height: 64px !important;
+        border-radius: 50% !important;
+        background: #ffffff !important;
+        color: #333 !important;
+        border: 1px solid #ddd !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2) !important;
+        font-size: 32px !important; /* 图标大小 */
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
     
-    /* 3. 放大内部的 Emoji 图标 */
-    [data-testid="stPopover"] > div > button > div {
-        font-size: 30px !important;
-    }
-    
-    /* 4. 按下效果 */
+    /* 按下反馈 */
     [data-testid="stPopover"] > div > button:active {
-        transform: scale(0.9);
-        background-color: #f5f5f5;
+        transform: scale(0.95);
+        background-color: #f0f0f0 !important;
     }
-    
-    /* 5. 展开后的对话框样式 - 靠右显示 */
+
+    /* --- 3. 弹出对话框：核心修复 --- */
+    /* 强制对话框脱离文档流，固定在屏幕特定位置，防止被截断 */
     [data-testid="stPopoverBody"] {
-        width: 380px !important;
-        max-width: 90vw;
-        border-radius: 20px !important;
-        border: none !important;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.15) !important;
-        right: 20px !important; /* 确保展开框也靠右 */
+        position: fixed !important;
+        
+        /* 这里的 top 值要等于：按钮top(80) + 按钮高度(64) + 间距(10) = 154px */
+        top: 154px !important; 
+        
+        /* 强制靠右对齐，与按钮平齐 */
+        right: 40px !important;
         left: auto !important;
+        
+        /* 禁用 Streamlit 的自动计算偏移，这是导致“四分五裂”的元凶 */
+        transform: none !important; 
+        
+        width: 380px !important;
+        max-width: 85vw !important; /* 防止手机上太宽 */
+        max-height: 600px !important;
+        
+        border-radius: 12px !important;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2) !important;
+        border: 1px solid #eee !important;
+        z-index: 9999999 !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # 按钮里只放一个图标
+    # 按钮内容
     with st.popover("🤖", use_container_width=False):
         st.markdown("### 💬 助教小电")
         
-        msg_container = st.container(height=400)
+        # 聊天记录容器
+        msg_container = st.container(height=350)
         with msg_container:
             for msg in st.session_state.messages:
                 if msg["role"] != "system":
                     with st.chat_message(msg["role"]):
                         st.markdown(msg["content"])
 
-        if prompt := st.chat_input("关于电路有什么问题？"):
-            
+        # 输入框
+        if prompt := st.chat_input("输入问题..."):
             with msg_container:
                 st.chat_message("user").markdown(prompt)
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -123,7 +129,7 @@ def render_floating_assistant():
                                 stream=True
                             )
                             for chunk in stream:
-                                if chunk.choices and len(chunk.choices) > 0:
+                                if chunk.choices:
                                     delta = chunk.choices[0].delta
                                     if delta.content:
                                         full_response += delta.content
@@ -132,6 +138,4 @@ def render_floating_assistant():
                             stream_box.markdown(full_response)
                             st.session_state.messages.append({"role": "assistant", "content": full_response})
                         except Exception as e:
-                            st.error(f"AI 响应中断: {str(e)}")
-            else:
-                st.error("AI 客户端未初始化")
+                            st.error(f"Error: {str(e)}")
