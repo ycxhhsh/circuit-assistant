@@ -45,24 +45,25 @@ def render_floating_assistant():
     
     st.markdown("""
     <style>
-    /* 1. 定位容器：右上角偏下 */
+    /* 1. 强制定位容器：右上角 */
     [data-testid="stPopover"] {
-        position: fixed;
-        top: 100px;
-        right: 30px;
-        z-index: 99999;
+        position: fixed !important; /* 增加权重 */
+        top: 60px !important;       /* 距离顶部 60px (避开 Streamlit 自带的汉堡菜单) */
+        right: 20px !important;     /* 距离右侧 20px */
+        left: auto !important;      /* 强制取消左侧定位，防止出现在左边 */
+        z-index: 999999 !important; /* 确保层级最高，不被侧边栏遮挡 */
     }
     
     /* 2. 按钮样式：大号平板触控版 */
     [data-testid="stPopover"] > div > button {
-        width: 72px;
-        height: 72px;
-        border-radius: 35px;
+        width: 60px;          /* 稍微调小一点点以免挡住太多内容 */
+        height: 60px;
+        border-radius: 30px;
         background: #ffffff;
         color: #333;
         border: 1px solid #e0e0e0;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.12); 
-        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+        transition: transform 0.2s;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -71,7 +72,7 @@ def render_floating_assistant():
     
     /* 3. 放大内部的 Emoji 图标 */
     [data-testid="stPopover"] > div > button > div {
-        font-size: 36px !important;
+        font-size: 30px !important;
     }
     
     /* 4. 按下效果 */
@@ -80,13 +81,15 @@ def render_floating_assistant():
         background-color: #f5f5f5;
     }
     
-    /* 5. 展开后的对话框样式 */
+    /* 5. 展开后的对话框样式 - 靠右显示 */
     [data-testid="stPopoverBody"] {
         width: 380px !important;
         max-width: 90vw;
         border-radius: 20px !important;
         border: none !important;
         box-shadow: 0 20px 60px rgba(0,0,0,0.15) !important;
+        right: 20px !important; /* 确保展开框也靠右 */
+        left: auto !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -102,10 +105,7 @@ def render_floating_assistant():
                     with st.chat_message(msg["role"]):
                         st.markdown(msg["content"])
 
-        # 提示语可以改得通用一点
-        if prompt := st.chat_input("请问电路相关的问题"):
-            
-            # --- 变动处：移除了之前的 log_context 获取和 system prompt 动态更新逻辑 ---
+        if prompt := st.chat_input("关于电路有什么问题？"):
             
             with msg_container:
                 st.chat_message("user").markdown(prompt)
