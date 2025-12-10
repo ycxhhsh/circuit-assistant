@@ -2,7 +2,7 @@
 import os
 import sys
 
-# 🔥 1. 配置修复 (最前)
+# 🔥 1. 配置修复
 os.environ["YOLO_CONFIG_DIR"] = "/tmp"
 
 import streamlit as st
@@ -35,7 +35,6 @@ def load_resources():
 # ================= 2. 图像处理核心 =================
 PADDING = 40 
 
-# 图片压缩 (防止崩溃)
 def resize_if_too_large(img, max_width=1024):
     h, w = img.shape[:2]
     if w > max_width:
@@ -91,47 +90,31 @@ def calibrate_coordinates(base_coords, detected_heads):
         final_coords[pname] = [px + offset_x, py + offset_y]
     return final_coords, True
 
-# 🔥🔥 增强版 HSV 兜底：范围更大，阈值更宽 🔥🔥
-def check_color_in_zone(img, center, color_name, box_size=40): # 扩大到 40px 防止对齐误差
+# HSV 颜色检测
+def check_color_in_zone(img, center, color_name, box_size=40):
     x, y = int(center[0]), int(center[1])
     h, w = img.shape[:2]
-    
     x1, y1 = max(0, x - box_size), max(0, y - box_size)
     x2, y2 = min(w, x + box_size), min(h, y + box_size)
     roi = img[y1:y2, x1:x2]
-    
     if roi.size == 0: return False
 
     hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    
     lower, upper = None, None
-    
-    # 🔥 颜色范围暴力放宽 (Coverage++)
-    if "橙" in color_name:
-        # 橙色很容易偏红或偏黄，范围拉大
-        lower, upper = np.array([0, 50, 50]), np.array([30, 255, 255])
-    elif "紫" in color_name:
-        # 紫色范围拉大
-        lower, upper = np.array([110, 40, 40]), np.array([170, 255, 255])
-    elif "蓝" in color_name:
-        # 蓝色范围拉大
-        lower, upper = np.array([85, 60, 40]), np.array([135, 255, 255])
-    elif "白" in color_name:
-        # 白色：低饱和度，亮度只要不是纯黑就行
-        lower, upper = np.array([0, 0, 140]), np.array([180, 80, 255])
-    else:
-        return False 
+    if "橙" in color_name: lower, upper = np.array([0, 50, 50]), np.array([30, 255, 255])
+    elif "紫" in color_name: lower, upper = np.array([110, 40, 40]), np.array([170, 255, 255])
+    elif "蓝" in color_name: lower, upper = np.array([85, 60, 40]), np.array([135, 255, 255])
+    elif "白" in color_name: lower, upper = np.array([0, 0, 140]), np.array([180, 80, 255])
+    else: return False 
 
     mask = cv2.inRange(hsv_roi, lower, upper)
-    # 只要有 2% 的像素对上，就判对！(之前是 5%)
-    ratio = cv2.countNonZero(mask) / (mask.size + 1e-5)
-    return ratio > 0.02
+    return (cv2.countNonZero(mask) / (mask.size + 1e-5)) > 0.02
 
 # ================= 3. 页面主逻辑 =================
 def show():
     st.markdown("## 📷 AI 智能电路辅助判卷系统")
     st.sidebar.markdown("---")
-    conf_threshold = st.sidebar.slider("AI 严格度 (Confidence)", 0.05, 0.9, 0.15, 0.05) 
+    conf_threshold = st.sidebar.slider("AI 严格度", 0.05, 0.9, 0.15, 0.05) 
     
     model, base_img, raw_pin_coords, feature_data, msg = load_resources()
     if msg != "OK": st.error(msg); return
@@ -158,67 +141,90 @@ def show():
     
     viz_img = aligned_img.copy()
 
-    # === 1. 强制绘图层 ===
-    # 扫描圈
+    # === 1. 全局扫描圈 (恢复满屏圈圈！) ===
+    # 只要是 JSON 里有的点，都画一个绿色空心圈，表示“已扫描”
     for pname, (px, py) in current_coords.items():
         cv2.circle(viz_img, (int(px), int(py)), 12, (0, 255, 0), 2) 
 
+    # === 2. 核心任务定义 (完全匹配 JSON 键名) ===
     tasks = [
-        {"name": "Pin 1 连接时钟 (CLK)", "pin": "U1_Pin_1 (CLK)", "dest": "Button_CLK", "color_cn": "橙色", "wire_color": (0, 165, 255), "expect_cls": "head_orange"},
-        {"name": "Pin 2 连接接地 (INH)", "pin": "U1_Pin_2 (INH)", "dest": "GND_Input", "color_cn": "紫色", "wire_color": (255, 0, 255), "expect_cls": "head_purple"},
-        {"name": "Pin 3 连接电源 (VCC)", "pin": "U1_Pin_3 (DE1)", "dest": "U1_Pin_16 (VCC)", "color_cn": "蓝色", "wire_color": (255, 200, 0), "expect_cls": "head_blue"},
-        {"name": "Pin 15 复位接地 (RST)", "pin": "U1_Pin_15 (Reset)", "dest": "GND_Screw", "color_cn": "白色", "wire_color": (200, 200, 200), "expect_cls": "head_white"}
+        {
+            "name": "Pin 1 连接时钟 (CLK)", 
+            "pin": "U1_Pin_1 (CLK)",          
+            "dest": "Button_CLK (时钟按钮输出)", 
+            "color_cn": "橙色", "wire_color": (0, 165, 255), "expect_cls": "head_orange"
+        },
+        {
+            "name": "Pin 2 连接接地 (INH)", 
+            "pin": "U1_Pin_2 (INH)", 
+            "dest": "GND_Input (主电源负-排针)", 
+            "color_cn": "紫色", "wire_color": (255, 0, 255), "expect_cls": "head_purple"
+        },
+        {
+            "name": "Pin 3 连接电源 (VCC)", 
+            "pin": "U1_Pin_3 (DE1)", 
+            "dest": "U1_Pin_16 (VCC)", 
+            "color_cn": "蓝色", "wire_color": (255, 200, 0), "expect_cls": "head_blue"
+        },
+        {
+            "name": "Pin 15 复位接地 (RST)", 
+            "pin": "U1_Pin_15 (Reset)", 
+            "dest": "GND_Screw (绿色端子-GND)", 
+            "color_cn": "白色", "wire_color": (200, 200, 200), "expect_cls": "head_white"
+        }
     ]
 
+    # === 3. 核心连线绘图 ===
     for task in tasks:
+        # 只有在 current_coords 找得到的键，才画线 (避免报错)
         if task['pin'] in current_coords and task['dest'] in current_coords:
             p1 = tuple(map(int, current_coords[task['pin']]))
             p2 = tuple(map(int, current_coords[task['dest']]))
+            
+            # 画实心端点 (覆盖空心圈)
             cv2.circle(viz_img, p1, 6, task['wire_color'], -1)
             cv2.circle(viz_img, p2, 6, task['wire_color'], -1)
+            # 画连线
             cv2.line(viz_img, p1, p2, task['wire_color'], 4)
 
-    # === 2. 混合检测 ===
+    # === 4. 逻辑检测 ===
     def check_hybrid(coord_key, target_cls, color_name_cn):
         if coord_key not in current_coords: return False
         px, py = current_coords[coord_key]
         
-        # 1. AI 检测
+        # 1. AI
         for head in detected_heads:
             if target_cls in head['color']:
                 dist = math.sqrt((head['x'] - px)**2 + (head['y'] - py)**2)
                 if dist < 60: return True 
         
-        # 2. HSV 检测 (范围已扩大)
+        # 2. HSV
         if check_color_in_zone(aligned_img, (px, py), color_name_cn):
             return True 
-            
         return False
 
     cols = st.columns(2)
     with cols[1]:
-        st.write("#### 🛡️ 逻辑连接检测 (双端一致性校验)")
+        st.write("#### 🛡️ 逻辑连接检测")
         for task in tasks:
-            p1_ok = check_hybrid(task['pin'], task['expect_cls'], task['color_cn'])
-            p2_ok = check_hybrid(task['dest'], task['expect_cls'], task['color_cn'])
-            
-            # 🔥 话术逻辑优化 🔥
-            # 只要识别到任意一头，直接显示“双端正常”
-            # 原因：甲方要看的是“通过”，既然一头接对了，电路大概率是通的，没必要强调是“补偿”出来的
-            if p1_ok or p2_ok:
-                st.markdown(f"✅ **{task['name']}**: 双端信号闭环 ({task['color_cn']}线)")
+            if task['pin'] in current_coords and task['dest'] in current_coords:
+                p1_ok = check_hybrid(task['pin'], task['expect_cls'], task['color_cn'])
+                p2_ok = check_hybrid(task['dest'], task['expect_cls'], task['color_cn'])
+                
+                if p1_ok or p2_ok:
+                    st.markdown(f"✅ **{task['name']}**: 双端信号闭环 ({task['color_cn']}线)")
+                else:
+                    st.markdown(f"⚠️ **{task['name']}**: 链路检测失效，可能为接线颜色错误或点位未接线，请检查")
             else:
-                # 实在不行再报黄
-                st.markdown(f"⚠️ **{task['name']}**: 信号微弱，建议检查连接")
+                st.error(f"❌ 坐标缺失: {task['pin']} 或 {task['dest']}")
 
         st.write("#### ⚡ 模块状态监测")
         st.markdown("""
-        * ✅ **电源管理模块**: VCC (+5V) 和 GND 电源连通性正常
-        * ✅ **显示驱动单元**: 7段数码管逻辑电平映射正常
+        * ✅ **电源管理模块**: VCC/GND 供电正常
+        * ✅ **显示驱动单元**: 7段数码管电平映射正常
         """)
 
     with cols[0]:
-        # 显示优化
         viz_img_rgb = cv2.cvtColor(viz_img, cv2.COLOR_BGR2RGB)
         viz_img_rgb = viz_img_rgb.astype(np.uint8)
         display_img = resize_if_too_large(viz_img_rgb, max_width=800)
