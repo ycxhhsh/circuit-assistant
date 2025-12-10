@@ -194,40 +194,56 @@ def show():
 
     # === 2. 逻辑检测层 (仅用于更新UI文字) ===
     
-    def check_point_loose(coord_key, target_cls):
+# === 2. 逻辑检测层 (更新后的动态互补逻辑) ===
+    
+    # 辅助函数：支持动态阈值检测 (替换原来的 check_point_loose)
+    def check_point_dynamic(coord_key, target_cls, dynamic_threshold):
         if coord_key not in current_coords: return False
         px, py = current_coords[coord_key]
         for head in detected_heads:
-            # 只要颜色对，距离稍微宽一点也没事
+            # 1. 颜色匹配
             if target_cls in head['color']:
+                # 2. 距离匹配
                 dist = math.sqrt((head['x'] - px)**2 + (head['y'] - py)**2)
-                if dist < dist_threshold + 40: # 放宽40px
+                
+                # 3. 动态阈值判定
+                # 如果是“宽容模式”，我们允许检测到的点偏离得更远一点
+                if dist < dist_threshold + dynamic_threshold: 
                     return True
         return False
 
     cols = st.columns(2)
     with cols[1]:
-        st.write("#### 🛡️ 逻辑连接检测")
+        st.write("#### 🛡️ 逻辑连接检测 (双端一致性校验)")
         for task in tasks:
-            # 检测两端
-            p1_ok = check_point_loose(task['pin'], task['expect_cls'])
-            p2_ok = check_point_loose(task['dest'], task['expect_cls'])
+            # --- 核心策略：动态阈值互补 ---
             
-            is_connected = p1_ok or p2_ok 
+            # 第一轮：用正常标准看两头 (0增益)
+            p1_strict = check_point_dynamic(task['pin'], task['expect_cls'], 0)
+            p2_strict = check_point_dynamic(task['dest'], task['expect_cls'], 0)
+
+            final_status = False
             
-            if is_connected:
-                st.markdown(f"✅ **{task['name']}**: 识别到 {task['color_cn']}线，连接正确")
+            # 情况A：两头都很完美 -> 完美通过
+            if p1_strict and p2_strict:
+                final_status = True
+            
+            # 情况B：只有一头很完美 -> 触发“视觉补偿机制”
+            # 既然一头已经连上了，我们把另一头的判定范围扩大 (放宽 60px) 再找一次
+            elif p1_strict:
+                p2_loose = check_point_dynamic(task['dest'], task['expect_cls'], 60)
+                if p2_loose: final_status = True
+                
+            elif p2_strict:
+                p1_loose = check_point_dynamic(task['pin'], task['expect_cls'], 60)
+                if p1_loose: final_status = True
+
+            # --- 结果展示 ---
+            if final_status:
+                st.markdown(f"✅ **{task['name']}**: 双端信号闭环 ({task['color_cn']}线)")
             else:
-                st.markdown(f"✅ **{task['name']}**: 链路信号检测正常 ({task['color_cn']}线)")
-
-        st.write("#### ⚡ 模块状态监测")
-        st.markdown("""
-        * ✅ **电源管理模块**: VCC (+5V) 电源连接正确
-        * ✅ **接地回路完整性**: GND 已连通
-        * ✅ **显示驱动单元**: 7段数码管逻辑电平映射正常
-        """)
-
-    with cols[0]:
-        st.image(cv2.cvtColor(viz_img, cv2.COLOR_BGR2RGB), caption="电路拓扑结构智能分析结果", use_column_width=True)
-
-    st.success("🎉 系统自检通过：电路逻辑拓扑验证完成，功能正常。")
+                # 即使失败，如果有一头识别到了，给个黄色警告而不是红色错误，演示效果更好
+                if p1_strict or p2_strict:
+                     st.markdown(f"⚠️ **{task['name']}**: 信号单端接入，请检查另一端 ({task['color_cn']}线)")
+                else:
+                     st.markdown(f"❌ **{task['name']}**: 未检测到信号链路")
