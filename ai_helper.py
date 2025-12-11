@@ -2,7 +2,7 @@
 import streamlit as st
 from openai import OpenAI
 
-# 配置你的 API (保持不变)
+# 配置你的 API
 API_KEY = "sk-vVIGbUylII5Kg9rZwGLZMzzubt778St90r66gGtTXTUs4shK" 
 BASE_URL = "https://api.openai-proxy.org/v1"
 MODEL_NAME = "gpt-4o" 
@@ -20,66 +20,86 @@ def init_ai_session():
             st.session_state.ai_client = None
 
     if "messages" not in st.session_state:
-        # 🔥 修改点：设置为通用电子助教，不再绑定具体实验
+        # --- 🔥 修改部分：更自然的人设 ---
+        system_instruction = """
+        你是一位友善、专业的电子电路助教（名字叫“助教小电”）。
+        
+        你的主要任务是解答学生关于电路、电子元器件（特别是 CD4026 芯片）以及实验调试的问题。
+        
+        【行为准则】
+        1. 请像一位耐心的学长或老师一样正常交流，不要机械地重复规则。
+        2. 只有当学生明确询问“怎么接线”、“引脚定义”或“电路连错了”时，你才需要引用具体的 CD4026 引脚知识（如 Pin 1 CLK, Pin 2 INH, Pin 15 RST 等）。
+        3. 回答要简洁明了，鼓励学生自己动手尝试。
+        """
         st.session_state.messages = [
-            {
-                "role": "system", 
-                "content": (
-                    "你是一位专业的电子电路助教 '小电'。"
-                    "你的职责是解答学生关于电子电路、元器件原理、仪器使用（如万用表、示波器）、"
-                    "焊接安全以及故障排查的一般性问题。"
-                    "你的语气要活泼、鼓励，适合中职或职高学生。"
-                    "如果学生问到具体实验步骤，你可以给出通用的指导，但不需要针对特定的 CD4026 连线进行评分。"
-                )
-            }
+            {"role": "system", "content": system_instruction}
         ]
 
 def render_floating_assistant():
-    """渲染平板优化的悬浮对话框"""
+    """渲染平板优化的悬浮对话框 - 最终修复版"""
     init_ai_session()
     
-    # CSS 样式保持不变，维持良好的触控体验
     st.markdown("""
     <style>
-    /* 悬浮球位置 */
+    /* --- 1. 按钮容器：强制固定在右上角 --- */
     [data-testid="stPopover"] {
-        position: fixed;
-        top: 100px; 
-        right: 30px;
-        z-index: 99999;
+        position: fixed !important;
+        top: 80px !important;       /* 避开顶部 Header */
+        right: 40px !important;     /* 靠右 */
+        left: auto !important;      /* 禁用左侧定位 */
+        bottom: auto !important;
+        z-index: 9999999 !important; /* 最高层级，防止被侧边栏遮挡 */
+        width: auto !important;
     }
-    
-    /* 悬浮球按钮样式 */
+
+    /* --- 2. 按钮本体样式 --- */
     [data-testid="stPopover"] > div > button {
-        width: 72px; height: 72px; border-radius: 35px;
-        background: #ffffff; color: #333; border: 1px solid #e0e0e0;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.12); 
-        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-        display: flex; align-items: center; justify-content: center; padding: 0;
+        width: 64px !important;
+        height: 64px !important;
+        border-radius: 50% !important;
+        background: #ffffff !important;
+        color: #333 !important;
+        border: 1px solid #ddd !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2) !important;
+        font-size: 32px !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
-    [data-testid="stPopover"] > div > button > div { font-size: 36px !important; }
     
-    /* 点击反馈 */
+    /* 按下反馈 */
     [data-testid="stPopover"] > div > button:active {
-        transform: scale(0.9); background-color: #f5f5f5;
+        transform: scale(0.95);
+        background-color: #f0f0f0 !important;
     }
-    
-    /* 聊天窗口样式 */
+
+    /* --- 3. 弹出对话框：强制固定位置，防止截断 --- */
     [data-testid="stPopoverBody"] {
-        width: 380px !important; max-width: 90vw;
-        border-radius: 20px !important; border: none !important;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.15) !important;
+        position: fixed !important;
+        top: 154px !important;      /* 按钮底部下方 (80+64+10) */
+        right: 40px !important;     /* 与按钮右对齐 */
+        left: auto !important;
+        transform: none !important; /* 关键：禁用 Streamlit 自动计算位置 */
+        
+        width: 380px !important;
+        max-width: 85vw !important;
+        max-height: 600px !important;
+        
+        border-radius: 12px !important;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2) !important;
+        border: 1px solid #eee !important;
+        z-index: 9999999 !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # 渲染悬浮按钮
+    # 按钮内容
     with st.popover("⚡", use_container_width=False):
         st.markdown("### 💬 助教小电")
-        st.caption("我是你的电子实验小助手，有什么问题都可以问我！")
         
-        # 消息容器
-        msg_container = st.container(height=400)
+        # 聊天记录容器
+        msg_container = st.container(height=350)
         with msg_container:
             for msg in st.session_state.messages:
                 if msg["role"] != "system":
@@ -87,8 +107,7 @@ def render_floating_assistant():
                         st.markdown(msg["content"])
 
         # 输入框
-        if prompt := st.chat_input("比如：数码管为什么不亮？"):
-            # 直接处理用户输入，不再注入 Context
+        if prompt := st.chat_input("同学，有什么问题吗？"):
             with msg_container:
                 st.chat_message("user").markdown(prompt)
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -105,7 +124,7 @@ def render_floating_assistant():
                                 stream=True
                             )
                             for chunk in stream:
-                                if chunk.choices and len(chunk.choices) > 0:
+                                if chunk.choices:
                                     delta = chunk.choices[0].delta
                                     if delta.content:
                                         full_response += delta.content
@@ -114,6 +133,6 @@ def render_floating_assistant():
                             stream_box.markdown(full_response)
                             st.session_state.messages.append({"role": "assistant", "content": full_response})
                         except Exception as e:
-                            st.error(f"AI 响应中断: {str(e)}")
+                            st.error(f"Error: {str(e)}")
             else:
                 st.error("AI 客户端未初始化")
