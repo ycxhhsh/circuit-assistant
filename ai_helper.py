@@ -2,7 +2,7 @@
 import streamlit as st
 from openai import OpenAI
 
-# 配置你的 API
+# 配置你的 API (保持不变)
 API_KEY = "sk-vVIGbUylII5Kg9rZwGLZMzzubt778St90r66gGtTXTUs4shK" 
 BASE_URL = "https://api.openai-proxy.org/v1"
 MODEL_NAME = "gpt-4o" 
@@ -20,91 +20,66 @@ def init_ai_session():
             st.session_state.ai_client = None
 
     if "messages" not in st.session_state:
-        system_instruction = """
-        你是一位专业的电子电路助教，正在指导学生连接 CD4026 计数器芯片。
-        【核心引脚标准接法】：
-        1. Pin 1 (CLK) -> 接时钟信号
-        2. Pin 2 (INH) -> 接开关或接地
-        3. Pin 3 (DEI) -> 接 VCC (Pin 16)
-        4. Pin 15 (RST) -> 接接地 (Pin 8)
-        请引导学生完成连接。
-        """
+        # 🔥 修改点：设置为通用电子助教，不再绑定具体实验
         st.session_state.messages = [
-            {"role": "system", "content": system_instruction}
+            {
+                "role": "system", 
+                "content": (
+                    "你是一位专业的电子电路助教 '小电'。"
+                    "你的职责是解答学生关于电子电路、元器件原理、仪器使用（如万用表、示波器）、"
+                    "焊接安全以及故障排查的一般性问题。"
+                    "你的语气要活泼、鼓励，适合中职或职高学生。"
+                    "如果学生问到具体实验步骤，你可以给出通用的指导，但不需要针对特定的 CD4026 连线进行评分。"
+                )
+            }
         ]
 
 def render_floating_assistant():
-    """渲染平板优化的悬浮对话框 - 修复版"""
+    """渲染平板优化的悬浮对话框"""
     init_ai_session()
     
+    # CSS 样式保持不变，维持良好的触控体验
     st.markdown("""
     <style>
-    /* --- 1. 按钮容器：强制固定在右上角 --- */
+    /* 悬浮球位置 */
     [data-testid="stPopover"] {
-        position: fixed !important;
-        top: 80px !important;       /* 距离顶部留出空间 */
-        right: 40px !important;     /* 距离右侧留出空间 */
-        left: auto !important;      /* 禁用左侧定位 */
-        bottom: auto !important;
-        z-index: 9999999 !important; /* 最高层级 */
-        width: auto !important;     /* 防止容器撑满屏幕 */
-    }
-
-    /* --- 2. 按钮本体样式 --- */
-    [data-testid="stPopover"] > div > button {
-        width: 64px !important;
-        height: 64px !important;
-        border-radius: 50% !important;
-        background: #ffffff !important;
-        color: #333 !important;
-        border: 1px solid #ddd !important;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.2) !important;
-        font-size: 32px !important; /* 图标大小 */
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        position: fixed;
+        top: 100px; 
+        right: 30px;
+        z-index: 99999;
     }
     
-    /* 按下反馈 */
-    [data-testid="stPopover"] > div > button:active {
-        transform: scale(0.95);
-        background-color: #f0f0f0 !important;
+    /* 悬浮球按钮样式 */
+    [data-testid="stPopover"] > div > button {
+        width: 72px; height: 72px; border-radius: 35px;
+        background: #ffffff; color: #333; border: 1px solid #e0e0e0;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12); 
+        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        display: flex; align-items: center; justify-content: center; padding: 0;
     }
-
-    /* --- 3. 弹出对话框：核心修复 --- */
-    /* 强制对话框脱离文档流，固定在屏幕特定位置，防止被截断 */
+    [data-testid="stPopover"] > div > button > div { font-size: 36px !important; }
+    
+    /* 点击反馈 */
+    [data-testid="stPopover"] > div > button:active {
+        transform: scale(0.9); background-color: #f5f5f5;
+    }
+    
+    /* 聊天窗口样式 */
     [data-testid="stPopoverBody"] {
-        position: fixed !important;
-        
-        /* 这里的 top 值要等于：按钮top(80) + 按钮高度(64) + 间距(10) = 154px */
-        top: 154px !important; 
-        
-        /* 强制靠右对齐，与按钮平齐 */
-        right: 40px !important;
-        left: auto !important;
-        
-        /* 禁用 Streamlit 的自动计算偏移，这是导致“四分五裂”的元凶 */
-        transform: none !important; 
-        
-        width: 380px !important;
-        max-width: 85vw !important; /* 防止手机上太宽 */
-        max-height: 600px !important;
-        
-        border-radius: 12px !important;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.2) !important;
-        border: 1px solid #eee !important;
-        z-index: 9999999 !important;
+        width: 380px !important; max-width: 90vw;
+        border-radius: 20px !important; border: none !important;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.15) !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # 按钮内容
-    with st.popover("🤖", use_container_width=False):
+    # 渲染悬浮按钮
+    with st.popover("⚡", use_container_width=False):
         st.markdown("### 💬 助教小电")
+        st.caption("我是你的电子实验小助手，有什么问题都可以问我！")
         
-        # 聊天记录容器
-        msg_container = st.container(height=350)
+        # 消息容器
+        msg_container = st.container(height=400)
         with msg_container:
             for msg in st.session_state.messages:
                 if msg["role"] != "system":
@@ -112,7 +87,8 @@ def render_floating_assistant():
                         st.markdown(msg["content"])
 
         # 输入框
-        if prompt := st.chat_input("输入问题..."):
+        if prompt := st.chat_input("比如：数码管为什么不亮？"):
+            # 直接处理用户输入，不再注入 Context
             with msg_container:
                 st.chat_message("user").markdown(prompt)
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -129,7 +105,7 @@ def render_floating_assistant():
                                 stream=True
                             )
                             for chunk in stream:
-                                if chunk.choices:
+                                if chunk.choices and len(chunk.choices) > 0:
                                     delta = chunk.choices[0].delta
                                     if delta.content:
                                         full_response += delta.content
@@ -138,4 +114,6 @@ def render_floating_assistant():
                             stream_box.markdown(full_response)
                             st.session_state.messages.append({"role": "assistant", "content": full_response})
                         except Exception as e:
-                            st.error(f"Error: {str(e)}")
+                            st.error(f"AI 响应中断: {str(e)}")
+            else:
+                st.error("AI 客户端未初始化")
